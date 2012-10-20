@@ -1,0 +1,102 @@
+#!/usr/bin/env php
+<?php
+function read_dir($dir, &$array = array()) {
+	$dh = opendir($dir);
+	$files = array();
+	if ($dh) {
+		while (($file = readdir($dh)) !== false) {
+			if (in_array($file, array('.','..')) || substr($file, 0, 1) == '.')
+				continue;
+
+			$path = $dir . "/" . $file;
+
+			if (is_dir($path)) {
+				read_dir($path, $array);
+			} else {
+				$array[] = $path;
+			}
+		}
+	}
+}
+
+$set = array();
+read_dir(realpath('./logs'), $set);
+
+$search = (object) array(
+	'file' => "@^.*\/(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})@i",
+	'line' => array(
+		"@^.*?(?P<hour>\d{2}):(?P<minute>\d{2})\s*<\s*(?P<user>.*?)\s*>:? ?(?P<message>.*)$@i",
+		"@^.*?(?P<hour>\d{2}):(?P<minute>\d{2})\s*-!- (?P<message>.*join.*)$@i",
+		"@^.*?(?P<hour>\d{2}):(?P<minute>\d{2})\s*-!- (?P<message>.*quit.*)$@i",
+		"@^.*?(?P<hour>\d{2}):(?P<minute>\d{2})\s*-!- (?P<message>.*)$@i",
+	),
+	'replace' => (object) array(
+		'file' => './new/#hsbne_%year%%month%%day%.log',
+		'line' => array(
+			'[%hour%:%minute%:00] <%user%> %message%',
+			'[%hour%:%minute%:00] *** Joins: %message%',
+			'[%hour%:%minute%:00] *** Quits: %message%',
+			'[%hour%:%minute%:00] *** %message%',
+		)
+	)
+);
+
+$output = array();
+
+foreach ($set as $file)
+{
+	$contents = file_get_contents($file);
+	foreach (explode("\n", $contents) as $line) {
+		$matchesfile = array();
+		$matchesline = array();
+		$matches = array();
+		$matchline = false;
+
+		preg_match($search->file, $file, $matchesfile);
+		$matches = array_merge($matchesfile, array());
+		foreach ($search->line as $index => $pattern)
+		{
+			$preg = preg_match($pattern, $line, $matchesline[$index]);
+			if ($preg == 1)
+			{
+				//var_dump($preg, $pattern, $line);
+				$matches = array_merge($matchesfile, $matchesline[$index]);
+				$matchline = $index;
+				break;
+			}
+		}
+		
+		$valid = array_filter(array_keys($matches), function ($key) { return !is_int($key); });
+		$matches = (object) array_intersect_key($matches, array_flip($valid));
+
+		//var_dump($matchline);
+
+		if ($matchline !== false) {
+			$new['file'] = $search->replace->file;
+			$new['line'] = $search->replace->line[$matchline];
+			foreach ($new as &$target) {
+				foreach ($matches as $key => $replace)
+				{
+					$target = str_replace("%$key%", $replace, $target);
+				}
+			}
+			unset($target);
+			$output[$new['file']][] = $new['line'];
+			//var_dump($new);
+		} else {
+			//var_dump($line);
+		}
+		
+	}
+}
+
+foreach ($output as $file => $content)
+{
+	$content = implode("\n", $content);
+	$path = explode('/', $file);
+	$filename = array_pop($path);
+	$dir = implode('/', $path);
+	//var_dump($dir, $content);
+	exec('mkdir -p ' . $dir);
+	file_put_contents($file, $content);
+}
