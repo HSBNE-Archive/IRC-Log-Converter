@@ -9,6 +9,11 @@ leaving. This script converts the old logs to the new logs.
 The script is recorded here in case it's found in the future that some huge gaff
 has been made and data lost.
 
+## What
+
+There are two log archives. the old is the files to be converted, and the dated
+archive is the latest logs from when the logging server was shut down.
+
 ## Requirements
 
 - >= PHP5.3
